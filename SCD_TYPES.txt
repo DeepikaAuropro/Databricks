@@ -1,0 +1,253 @@
+SOURCE TABLE:
+mysql> DESC CLG;
++----------+--------------+------+-----+---------+-------+
+| Field    | Type         | Null | Key | Default | Extra |
++----------+--------------+------+-----+---------+-------+
+| ID       | int          | NO   | PRI | NULL    |       |
+| NAME     | varchar(50)  | YES  |     | NULL    |       |
+| FEE      | int          | YES  |     | NULL    |       |
+| LOCATION | varchar(100) | YES  |     | NULL    |       |
++----------+--------------+------+-----+---------+-------+
+4 rows in set (0.03 sec)
+
+TARGET TABLE:
+mysql> DESC HISTORY;
++-----------+--------------+------+-----+---------+-------+
+| Field     | Type         | Null | Key | Default | Extra |
++-----------+--------------+------+-----+---------+-------+
+| ID        | int          | YES  |     | NULL    |       |
+| NAME      | varchar(50)  | YES  |     | NULL    |       |
+| FEE       | int          | YES  |     | NULL    |       |
+| LOCATION  | varchar(100) | YES  |     | NULL    |       |
+| PREV_LOC  | varchar(100) | YES  |     | NULL    |       |
+| INDICATOR | varchar(20)  | YES  |     | NULL    |       |
+| START_DT  | date         | YES  |     | NULL    |       |
+| END_DT    | date         | YES  |     | NULL    |       |
+| SUR_KEY   | int          | YES  |     | NULL    |       |
++-----------+--------------+------+-----+---------+-------+
+9 rows in set (0.00 sec)
+
+-------------------------------------------------------------------------------------
+TRIGGERS
+-------------------------------------------------------------------------------------
+DELIMITER $$
+CREATE TRIGGER trigger1
+AFTER insert ON CLG
+FOR EACH ROW
+BEGIN
+  INSERT INTO HISTORY(ID,NAME,FEE,LOCATION,PREV_LOC,INDICATOR,START_DT,END_DT,SUR_KEY)
+  VALUES (new.ID,new.NAME,new.FEE,new.LOCATION,"-","Y",now(),null,1);
+END $$
+DELIMITER ;
+--------------------------------------------------------------------------------------------------
+DELIMITER $$
+CREATE TRIGGER TRIGGER2
+AFTER UPDATE ON CLG
+FOR EACH ROW
+BEGIN
+IF OLD.LOCATION!=NEW.LOCATION THEN
+	UPDATE HISTORY SET LOCATION=new.LOCATION,PREV_LOC=old.LOCATION WHERE ID=NEW.ID;
+END IF;
+END $$
+DELIMITER ;
+---------------------------------------------------------------------------------------------------
+DELIMITER $$
+CREATE TRIGGER TRIGGER3
+AFTER UPDATE ON CLG
+FOR EACH ROW
+BEGIN
+IF OLD.NAME!=NEW.NAME THEN
+	UPDATE HISTORY SET NAME=NEW.NAME WHERE ID=NEW.ID;
+END IF;
+END $$
+DELIMITER ;
+----------------------------------------------------------------------------------------------------------
+DELIMITER $$
+CREATE TRIGGER trigger4
+AFTER update ON CLG
+FOR EACH ROW
+BEGIN
+if NEW.FEE != OLD.FEE THEN
+  UPDATE HISTORY
+  SET END_DT = START_DT-1, INDICATOR = 'N'
+  WHERE ID = OLD.ID AND  NEW.FEE != OLD.FEE AND INDICATOR="Y"; 
+
+  INSERT INTO HISTORY(ID,NAME,FEE,LOCATION,INDICATOR,START_DT,END_DT)
+   VALUES (new.ID,new.NAME,new.FEE,new.LOCATION,"Y",now(),null);
+END IF;
+END $$
+DELIMITER ;
+-------------------------------------------------------------------------------------------
+DELIMITER $$
+CREATE TRIGGER surrogate_key
+BEFORE INSERT ON HISTORY
+FOR EACH ROW
+BEGIN
+  DECLARE max_sur_key INT;
+  DECLARE max_id INT;
+  SELECT MAX(sur_key), MAX(id) INTO max_sur_key, max_id FROM HISTORY WHERE ID = NEW.ID;
+  IF max_ID IS NULL THEN
+    SET max_id = 0;
+  END IF;
+  IF max_sur_key IS NULL THEN
+    SET max_sur_key = 0;
+  END IF;
+  IF max_id = NEW.ID THEN
+    SET NEW.sur_key = max_sur_key + 1;
+  ELSE
+    SET NEW.sur_key = 1;
+  END IF;
+END$$
+DELIMITER ;
+----------------------------------------------------------------------------------------------
+DELIMITER $$
+CREATE TRIGGER reset
+BEFORE INSERT ON HISTORY
+FOR EACH ROW
+BEGIN
+  DECLARE prev varchar(20);
+  DECLARE max_id INT;
+  SELECT  prev_loc,MAX(id) INTO prev,max_id FROM HISTORY WHERE ID = NEW.ID;
+  IF max_id = NEW.ID THEN
+  SET NEW.PREV_LOC = prev;
+  END IF;
+  
+END$$
+DELIMITER ;
+----------------------------------------------------------------------------------------------
+INSERTING VALUES
+---------------------
+mysql> insert into clg values(1,'ANA',30000,'HYD'),(2,'BOB',31000,'HYD');
+Query OK, 2 rows affected (0.01 sec)
+Records: 2  Duplicates: 0  Warnings: 0
+
+mysql>  select * from clg;
++----+------+-------+----------+
+| ID | NAME | FEE   | LOCATION |
++----+------+-------+----------+
+|  1 | ANA  | 30000 | HYD      |
+|  2 | BOB  | 31000 | HYD      |
++----+------+-------+----------+
+2 rows in set (0.00 sec)
+
+mysql> select * from history;
++------+------+-------+----------+----------+-----------+------------+--------+---------+
+| ID   | NAME | FEE   | LOCATION | PREV_LOC | INDICATOR | START_DT   | END_DT | SUR_KEY |
++------+------+-------+----------+----------+-----------+------------+--------+---------+
+|    1 | ANA  | 30000 | HYD      | -        | Y         | 2023-02-22 | NULL   |       1 |
+|    2 | BOB  | 31000 | HYD      | -        | Y         | 2023-02-22 | NULL   |       1 |
++------+------+-------+----------+----------+-----------+------------+--------+---------+
+2 rows in set (0.00 sec)
+------------------------------------------------------------------------------------------------------
+TYPE-1
+---------
+
+mysql> UPDATE CLG
+    -> SET NAME='A.ANNA' WHERE ID=1;
+Query OK, 1 row affected (0.01 sec)
+Rows matched: 1  Changed: 1  Warnings: 0
+
+mysql>  select * from clg;
++----+--------+-------+----------+
+| ID | NAME   | FEE   | LOCATION |
++----+--------+-------+----------+
+|  1 | A.ANNA | 30000 | HYD      |
+|  2 | BOB    | 31000 | HYD      |
++----+--------+-------+----------+
+2 rows in set (0.00 sec)
+
+mysql> select * from history;
++------+--------+-------+----------+----------+-----------+------------+--------+---------+
+| ID   | NAME   | FEE   | LOCATION | PREV_LOC | INDICATOR | START_DT   | END_DT | SUR_KEY |
++------+--------+-------+----------+----------+-----------+------------+--------+---------+
+|    1 | A.ANNA | 30000 | HYD      | -        | Y         | 2023-02-22 | NULL   |       1 |
+|    2 | BOB    | 31000 | HYD      | -        | Y         | 2023-02-22 | NULL   |       1 |
++------+--------+-------+----------+----------+-----------+------------+--------+---------+
+2 rows in set (0.00 sec)
+
+---------------------------------------------------------------------------------------------------------
+TYPE-2
+------------
+mysql> UPDATE CLG
+    -> SET FEE=30000 WHERE ID=2;
+Query OK, 1 row affected (0.01 sec)
+Rows matched: 1  Changed: 1  Warnings: 0
+
+mysql>  select * from clg;
++----+--------+-------+----------+
+| ID | NAME   | FEE   | LOCATION |
++----+--------+-------+----------+
+|  1 | A.ANNA | 30000 | HYD      |
+|  2 | BOB    | 30000 | HYD      |
++----+--------+-------+----------+
+2 rows in set (0.00 sec)
+
+mysql> select * from history;
++------+--------+-------+----------+----------+-----------+------------+------------+---------+
+| ID   | NAME   | FEE   | LOCATION | PREV_LOC | INDICATOR | START_DT   | END_DT     | SUR_KEY |
++------+--------+-------+----------+----------+-----------+------------+------------+---------+
+|    1 | A.ANNA | 30000 | HYD      | -        | Y         | 2023-02-22 | NULL       |       1 |
+|    2 | BOB    | 31000 | HYD      | -        | N         | 2023-02-22 | 2023-02-21 |       1 |
+|    2 | BOB    | 30000 | HYD      | -        | Y         | 2023-02-22 | NULL       |       2 |
++------+--------+-------+----------+----------+-----------+------------+------------+---------+
+3 rows in set (0.00 sec)
+
+UPDATE CLG
+    -> SET LOCATION='KNR',FEE=32000 WHERE ID=1;
+Query OK, 1 row affected (0.01 sec)
+Rows matched: 1  Changed: 1  Warnings: 0
+
+mysql>  select * from clg;
++----+--------+-------+----------+
+| ID | NAME   | FEE   | LOCATION |
++----+--------+-------+----------+
+|  1 | A.ANNA | 32000 | KNR      |
+|  2 | BOB    | 30000 | BLR      |
++----+--------+-------+----------+
+2 rows in set (0.00 sec)
+
+mysql> select * from history;
++------+--------+-------+----------+----------+-----------+------------+------------+---------+
+| ID   | NAME   | FEE   | LOCATION | PREV_LOC | INDICATOR | START_DT   | END_DT     | SUR_KEY |
++------+--------+-------+----------+----------+-----------+------------+------------+---------+
+|    1 | A.ANNA | 30000 | KNR      | HYD      | N         | 2023-02-22 | 2023-02-21 |       1 |
+|    2 | BOB    | 31000 | BLR      | HYD      | N         | 2023-02-22 | 2023-02-21 |       1 |
+|    2 | BOB    | 30000 | BLR      | HYD      | Y         | 2023-02-22 | NULL       |       2 |
+|    1 | A.ANNA | 32000 | KNR      | HYD      | Y         | 2023-02-22 | NULL       |       2 |
++------+--------+-------+----------+----------+-----------+------------+------------+---------+
+
+-----------------------------------------------------------------------------------------------------------------------
+TYPE-3
+---------
+mysql> UPDATE CLG
+    -> SET LOCATION='BLR' WHERE ID=2;
+Query OK, 1 row affected (0.01 sec)
+Rows matched: 1  Changed: 1  Warnings: 0
+
+mysql>  select * from clg;
++----+--------+-------+----------+
+| ID | NAME   | FEE   | LOCATION |
++----+--------+-------+----------+
+|  1 | A.ANNA | 30000 | HYD      |
+|  2 | BOB    | 30000 | BLR      |
++----+--------+-------+----------+
+2 rows in set (0.00 sec)
+
+mysql> select * from history;
++------+--------+-------+----------+----------+-----------+------------+------------+---------+
+| ID   | NAME   | FEE   | LOCATION | PREV_LOC | INDICATOR | START_DT   | END_DT     | SUR_KEY |
++------+--------+-------+----------+----------+-----------+------------+------------+---------+
+|    1 | A.ANNA | 30000 | HYD      | -        | Y         | 2023-02-22 | NULL       |       1 |
+|    2 | BOB    | 31000 | BLR      | HYD      | N         | 2023-02-22 | 2023-02-21 |       1 |
+|    2 | BOB    | 30000 | BLR      | HYD      | Y         | 2023-02-22 | NULL       |       2 |
++------+--------+-------+----------+----------+-----------+------------+------------+---------+
+3 rows in set (0.00 sec)
+
+ 
+
+
+
+
+
+
+
